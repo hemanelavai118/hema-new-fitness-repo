@@ -1,10 +1,15 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const Login = () => {
-  const [formData, setFormData] = useState({ email: '', password: '' });
+  const location = useLocation();
+  const [formData, setFormData] = useState({
+    email: location.state?.email || '',
+    password: '',
+  });
   const [error, setError] = useState('');
+  const [successMessage] = useState(location.state?.successMessage || '');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -33,6 +38,7 @@ const Login = () => {
     <div style={styles.container}>
       <div style={styles.formContainer}>
         <h1>Login</h1>
+        {successMessage && <div style={styles.success}>{successMessage}</div>}
         {error && <div style={styles.error}>{error}</div>}
         
         <form onSubmit={handleSubmit}>
@@ -74,6 +80,14 @@ const Login = () => {
         <p style={styles.link}>
           Don't have an account? <Link to="/register">Register here</Link>
         </p>
+
+        <div style={styles.demoBox}>
+          <h3 style={styles.demoTitle}>Demo credentials</h3>
+          <p style={styles.demoText}>Use these demo accounts if you do not have your own login yet.</p>
+          <div style={styles.demoRow}><strong>User:</strong> user@example.com / password123</div>
+          <div style={styles.demoRow}><strong>Mentor:</strong> mentor@example.com / password123</div>
+          <div style={styles.demoRow}><strong>Admin:</strong> admin@example.com / password123</div>
+        </div>
       </div>
     </div>
   );
@@ -117,6 +131,34 @@ const styles = {
     borderRadius: '4px',
     cursor: 'pointer',
     width: '100%',
+  },
+  success: {
+    color: '#166534',
+    marginBottom: '1rem',
+    padding: '0.75rem',
+    backgroundColor: '#dcfce7',
+    borderRadius: '4px',
+  },
+  demoBox: {
+    marginTop: '1.5rem',
+    padding: '1rem',
+    backgroundColor: '#f8fafc',
+    border: '1px solid #cbd5e1',
+    borderRadius: '8px',
+  },
+  demoTitle: {
+    margin: '0 0 0.5rem',
+    fontSize: '1rem',
+  },
+  demoText: {
+    margin: '0 0 0.75rem',
+    color: '#475569',
+    fontSize: '0.95rem',
+  },
+  demoRow: {
+    marginBottom: '0.5rem',
+    color: '#0f172a',
+    fontSize: '0.95rem',
   },
   error: {
     color: '#d32f2f',

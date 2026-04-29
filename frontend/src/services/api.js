@@ -65,6 +65,7 @@ export const bookingAPI = {
 export const reviewAPI = {
   addReview: (reviewData) => api.post('/reviews', reviewData),
   getTrainerReviews: (trainerId) => api.get(`/reviews/trainer/${trainerId}`),
+  getMyReviews: () => api.get('/reviews/me'),
   replyToReview: (reviewId, reply) => api.put(`/reviews/${reviewId}/reply`, reply),
 };
 

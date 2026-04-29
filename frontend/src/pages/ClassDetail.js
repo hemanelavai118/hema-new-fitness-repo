@@ -15,6 +15,19 @@ const DummyPaymentModal = ({ bookingId, amount, className, onSuccess, onClose })
       setError('Please enter the cardholder name.');
       return;
     }
+
+    const normalizedNumber = card.number.replace(/\s+/g, '');
+    const declineNumbers = ['4000000000000002', '4000000000000003', '4000000000009995', '4000000000000069'];
+    if (declineNumbers.includes(normalizedNumber)) {
+      setError('Payment declined. Use 4242 4242 4242 4242 for successful demo checkout.');
+      return;
+    }
+
+    if (normalizedNumber !== '4242424242424242') {
+      setError('Invalid demo card. Use 4242 4242 4242 4242 for successful checkout.');
+      return;
+    }
+
     setError('');
     setProcessing(true);
     try {
@@ -110,6 +123,7 @@ const ClassDetail = () => {
   const [clientSecret, setClientSecret] = useState('');
   const [pendingBookingId, setPendingBookingId] = useState(null);
   const [showDummyModal, setShowDummyModal] = useState(false);
+  const [alreadyBooked, setAlreadyBooked] = useState(false);
 
   // ✅ FIXED using useCallback
   const fetchClassDetails = useCallback(async () => {
@@ -126,12 +140,20 @@ const ClassDetail = () => {
         );
         setReviews(reviewsResponse.data);
       }
+
+      if (user) {
+        const bookingsResponse = await bookingAPI.getMyBookings();
+        const hasBooking = bookingsResponse.data.some(
+          booking => String(booking.class?._id) === String(classResponse.data._id) && booking.status !== 'cancelled'
+        );
+        setAlreadyBooked(hasBooking);
+      }
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to fetch class details');
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, user]);
 
   // ✅ Correct dependency
   useEffect(() => {
@@ -144,7 +166,6 @@ const ClassDetail = () => {
       const response = await bookingAPI.createBooking({ classId: id });
       
       if (response.data.clientSecret === 'dummy_secret_mode') {
-        // Show dummy payment modal instead of auto-confirming
         setPendingBookingId(response.data.booking._id);
         setShowDummyModal(true);
       } else {
@@ -155,6 +176,9 @@ const ClassDetail = () => {
       const msg = err.response?.data?.message || 'Booking failed';
       setError(msg);
       alert(msg);
+      if (msg === 'You already have a booking for this class.') {
+        setAlreadyBooked(true);
+      }
     } finally {
       setBookingLoading(false);
     }
@@ -238,13 +262,21 @@ const ClassDetail = () => {
         </div>
 
         {user && spotsAvailable > 0 && !clientSecret && !showDummyModal && (
-          <button
-            onClick={handleBookingInit}
-            disabled={bookingLoading}
-            style={styles.bookButton}
-          >
-            {bookingLoading ? '⏳ Initializing booking...' : '💳 Book & Pay Now'}
-          </button>
+          <>
+            {alreadyBooked ? (
+              <div style={styles.alreadyBookedBanner}>
+                ✅ You already have a booking for this class. Visit My Bookings to manage it.
+              </div>
+            ) : (
+              <button
+                onClick={handleBookingInit}
+                disabled={bookingLoading}
+                style={styles.bookButton}
+              >
+                {bookingLoading ? '⏳ Initializing booking...' : '💳 Book & Pay Now'}
+              </button>
+            )}
+          </>
         )}
 
         {clientSecret && (
@@ -343,6 +375,15 @@ const styles = {
   },
   error: {
     color: 'red',
+  },
+  alreadyBookedBanner: {
+    marginTop: '1rem',
+    padding: '1rem',
+    background: '#ecfdf5',
+    color: '#065f46',
+    border: '1px solid #6ee7b7',
+    borderRadius: '8px',
+    fontWeight: '600',
   },
   reviewsSection: {
     background: '#fff',

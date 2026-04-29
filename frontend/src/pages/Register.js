@@ -33,7 +33,12 @@ const Register = () => {
     try {
       const { confirmPassword, ...registerData } = formData;
       await register(registerData);
-      navigate('/dashboard');
+      navigate('/login', {
+        state: {
+          successMessage: 'Registration completed. Please login with your credentials.',
+          email: registerData.email,
+        },
+      });
     } catch (err) {
       setError(err.message);
     } finally {

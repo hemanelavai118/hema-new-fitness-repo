@@ -13,6 +13,16 @@ const createBooking = async (req, res) => {
       return res.status(404).json({ message: 'Class not found' });
     }
 
+    const existingBooking = await Booking.findOne({
+      user: req.user._id,
+      class: classId,
+      status: { $ne: 'cancelled' }
+    });
+
+    if (existingBooking) {
+      return res.status(400).json({ message: 'You already have a booking for this class.' });
+    }
+
     if (fitnessClass.enrolledUsers.length >= fitnessClass.capacity) {
       return res.status(400).json({ message: 'Class is full' });
     }

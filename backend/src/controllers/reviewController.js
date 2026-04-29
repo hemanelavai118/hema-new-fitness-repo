@@ -18,6 +18,15 @@ const addReview = async (req, res) => {
       return res.status(400).json({ message: 'You can only review trainers you have booked.' });
     }
 
+    const existingReview = await Review.findOne({
+      user: req.user._id,
+      class: classId,
+    });
+
+    if (existingReview) {
+      return res.status(400).json({ message: 'Feedback already submitted for this class.' });
+    }
+
     const review = await Review.create({
       user: req.user._id,
       trainer: trainerId,
@@ -36,6 +45,18 @@ const addReview = async (req, res) => {
     );
 
     res.status(201).json(review);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Get reviews for the current user
+const getUserReviews = async (req, res) => {
+  try {
+    const reviews = await Review.find({ user: req.user._id })
+      .populate('trainer', 'name email')
+      .populate('class', 'title');
+    res.json(reviews);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -71,4 +92,4 @@ const replyToReview = async (req, res) => {
   }
 };
 
-module.exports = { addReview, getTrainerReviews, replyToReview };
+module.exports = { addReview, getUserReviews, getTrainerReviews, replyToReview };

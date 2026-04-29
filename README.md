@@ -130,6 +130,17 @@ Visit **http://localhost:3000** 🎉
 
 ---
 
+## 🧪 Demo Credentials
+Use these accounts to log in quickly during development or testing:
+
+- **User**: `user@example.com` / `password123`
+- **Mentor**: `mentor@example.com` / `password123`
+- **Admin**: `admin@example.com` / `password123`
+
+If these accounts are not present in your database, create them by registering or seeding users in the backend.
+
+---
+
 ## 💳 Payment Gateway
 
 The platform works in two modes:

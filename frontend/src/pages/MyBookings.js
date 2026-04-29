@@ -7,10 +7,11 @@ const MyBookings = () => {
   const [error, setError] = useState('');
   const [reviewingBookingId, setReviewingBookingId] = useState(null);
   const [reviewData, setReviewData] = useState({ rating: 5, comment: '' });
+  const [userReviews, setUserReviews] = useState([]);
   const [availableClasses, setAvailableClasses] = useState([]);
   const [reschedulingId, setReschedulingId] = useState(null);
   const [newClassId, setNewClassId] = useState('');
-  const [expandedId, setExpandedId] = useState(null);
+  const [selectedStatus, setSelectedStatus] = useState('all');
   const [paymentModal, setPaymentModal] = useState(null); // { bookingId, amount, className }
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [cardDetails, setCardDetails] = useState({ number: '4242 4242 4242 4242', expiry: '12/26', cvv: '123', name: '' });
@@ -18,6 +19,7 @@ const MyBookings = () => {
   useEffect(() => {
     fetchBookings();
     fetchClasses();
+    fetchUserReviews();
   }, []);
 
   const fetchClasses = async () => {
@@ -38,6 +40,15 @@ const MyBookings = () => {
       setError(err.response?.data?.message || 'Failed to fetch bookings');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchUserReviews = async () => {
+    try {
+      const response = await reviewAPI.getMyReviews();
+      setUserReviews(response.data);
+    } catch (err) {
+      console.error('Failed to fetch user reviews', err);
     }
   };
 
@@ -81,6 +92,7 @@ const MyBookings = () => {
       alert('✅ Feedback submitted successfully! Thank you for your review.');
       setReviewingBookingId(null);
       setReviewData({ rating: 5, comment: '' });
+      fetchUserReviews();
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to submit feedback');
     }
@@ -188,6 +200,13 @@ const MyBookings = () => {
     cancelled: bookings.filter(b => b.status === 'cancelled').length,
   };
 
+  const filteredBookings = bookings.filter(booking => {
+    if (selectedStatus === 'all') {
+      return booking.status !== 'cancelled';
+    }
+    return booking.status === selectedStatus;
+  });
+
   return (
     <div style={styles.page}>
       <style>{`
@@ -209,12 +228,23 @@ const MyBookings = () => {
         {/* Stats */}
         <div style={styles.statsGrid}>
           {[
-            { label: 'Total Bookings', value: stats.total, color: '#6366f1', bg: '#ede9fe' },
-            { label: 'Active', value: stats.active, color: '#f59e0b', bg: '#fef3c7' },
-            { label: 'Completed', value: stats.completed, color: '#10b981', bg: '#d1fae5' },
-            { label: 'Cancelled', value: stats.cancelled, color: '#ef4444', bg: '#fee2e2' },
+            { label: 'All Active', value: stats.active + stats.completed, valueLabel: 'Total', status: 'all', color: '#6366f1', bg: '#ede9fe' },
+            { label: 'Active', value: stats.active, status: 'reserved', color: '#f59e0b', bg: '#fef3c7' },
+            { label: 'Completed', value: stats.completed, status: 'completed', color: '#10b981', bg: '#d1fae5' },
+            { label: 'Cancelled', value: stats.cancelled, status: 'cancelled', color: '#ef4444', bg: '#fee2e2' },
           ].map(s => (
-            <div key={s.label} className="stat-card" style={{ ...styles.statCard, borderTop: `4px solid ${s.color}` }}>
+            <div
+              key={s.label}
+              className="stat-card"
+              onClick={() => setSelectedStatus(s.status)}
+              style={{
+                ...styles.statCard,
+                borderTop: `4px solid ${s.color}`,
+                cursor: 'pointer',
+                backgroundColor: selectedStatus === s.status ? '#ffffff' : s.bg,
+                boxShadow: selectedStatus === s.status ? '0 10px 32px rgba(0,0,0,0.16)' : undefined,
+              }}
+            >
               <div style={{ fontSize: '2rem', fontWeight: '800', color: s.color }}>{s.value}</div>
               <div style={{ fontSize: '0.85rem', color: '#6c757d', marginTop: '4px' }}>{s.label}</div>
             </div>
@@ -229,9 +259,19 @@ const MyBookings = () => {
             <p style={{ color: '#6c757d' }}>Browse our classes and book your first session!</p>
             <a href="/classes" style={styles.browseBtn}>Browse Classes →</a>
           </div>
+        ) : filteredBookings.length === 0 ? (
+          <div style={styles.emptyState}>
+            <div style={{ fontSize: '4rem' }}>🗂️</div>
+            <h3 style={{ color: '#343a40', marginTop: '1rem' }}>No {selectedStatus === 'cancelled' ? 'Cancelled' : 'Active'} Bookings</h3>
+            <p style={{ color: '#6c757d' }}>
+              {selectedStatus === 'cancelled'
+                ? 'You have no cancelled bookings yet.'
+                : 'No active or completed bookings are available right now.'}
+            </p>
+          </div>
         ) : (
           <div style={styles.bookingsList}>
-            {bookings.map(booking => (
+            {filteredBookings.map(booking => (
               <div key={booking._id} className="booking-card" style={styles.bookingCard}>
                 {/* Card Top: Color bar by status */}
                 <div style={{
@@ -359,18 +399,37 @@ const MyBookings = () => {
                   )}
 
                   {/* Feedback button — available for reserved (paid) and completed bookings */}
-                  {(booking.status === 'completed' || (booking.status === 'reserved' && booking.paymentStatus === 'paid')) && (
-                    <button
-                      className="action-btn"
-                      onClick={() => {
-                        setReviewingBookingId(reviewingBookingId === booking._id ? null : booking._id);
-                        setReviewData({ rating: 5, comment: '' });
-                      }}
-                      style={{ ...styles.actionBtn, background: reviewingBookingId === booking._id ? '#495057' : '#f59e0b' }}
-                    >
-                      ⭐ {reviewingBookingId === booking._id ? 'Cancel Feedback' : 'Give Feedback'}
-                    </button>
-                  )}
+                  {(() => {
+                    const existingReview = userReviews.find(rv => String(rv.class?._id || rv.class) === String(booking.class?._id));
+                    if (existingReview) {
+                      return (
+                        <button
+                          className="action-btn"
+                          onClick={() => setReviewingBookingId(reviewingBookingId === booking._id ? null : booking._id)}
+                          style={{ ...styles.actionBtn, background: reviewingBookingId === booking._id ? '#495057' : '#0ea5e9' }}
+                        >
+                          📝 {reviewingBookingId === booking._id ? 'Hide Feedback' : 'View Submitted Feedback'}
+                        </button>
+                      );
+                    }
+
+                    if (booking.status === 'completed' || (booking.status === 'reserved' && booking.paymentStatus === 'paid')) {
+                      return (
+                        <button
+                          className="action-btn"
+                          onClick={() => {
+                            setReviewingBookingId(reviewingBookingId === booking._id ? null : booking._id);
+                            setReviewData({ rating: 5, comment: '' });
+                          }}
+                          style={{ ...styles.actionBtn, background: reviewingBookingId === booking._id ? '#495057' : '#f59e0b' }}
+                        >
+                          ⭐ {reviewingBookingId === booking._id ? 'Cancel Feedback' : 'Give Feedback'}
+                        </button>
+                      );
+                    }
+
+                    return null;
+                  })()}
                 </div>
 
                 {/* Reschedule Form */}
@@ -399,55 +458,76 @@ const MyBookings = () => {
                   </form>
                 )}
 
-                {/* Feedback / Review Form */}
-                {reviewingBookingId === booking._id && (
-                  <form onSubmit={(e) => handleReviewSubmit(e, booking)} style={{ ...styles.formBox, borderColor: '#f59e0b' }}>
-                    <h4 style={{ ...styles.formTitle, color: '#d97706' }}>⭐ Share Your Feedback</h4>
-                    <p style={{ fontSize: '0.85rem', color: '#6c757d', marginBottom: '1rem' }}>
-                      Your feedback helps improve our classes and supports your trainer.
-                    </p>
-
-                    <div style={styles.formGroup}>
-                      <label style={styles.label}>Rating</label>
-                      <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        {[1, 2, 3, 4, 5].map(num => (
-                          <button
-                            key={num}
-                            type="button"
-                            onClick={() => setReviewData({ ...reviewData, rating: num })}
-                            style={{
-                              fontSize: '1.5rem',
-                              background: 'none',
-                              border: 'none',
-                              cursor: 'pointer',
-                              opacity: num <= reviewData.rating ? 1 : 0.3,
-                              transition: 'opacity 0.2s',
-                            }}
-                          >⭐</button>
-                        ))}
-                        <span style={{ alignSelf: 'center', color: '#6c757d', fontSize: '0.9rem' }}>
-                          ({reviewData.rating}/5)
-                        </span>
+                {(() => {
+                  const existingReview = userReviews.find(rv => String(rv.class?._id || rv.class) === String(booking.class?._id));
+                  if (existingReview && reviewingBookingId === booking._id) {
+                    return (
+                      <div style={{ ...styles.formBox, borderColor: '#0ea5e9' }}>
+                        <h4 style={{ ...styles.formTitle, color: '#0284c7' }}>📝 Feedback Already Submitted</h4>
+                        <p style={{ fontSize: '0.85rem', color: '#6c757d', marginBottom: '1rem' }}>
+                          You have already shared feedback for this class. See your submitted review below.
+                        </p>
+                        <div style={styles.existingReviewBox}>
+                          <div style={{ marginBottom: '0.75rem', fontWeight: '700' }}>Your Rating: {'⭐'.repeat(existingReview.rating)}</div>
+                          <p style={{ margin: 0, color: '#334155' }}>{existingReview.comment}</p>
+                        </div>
                       </div>
-                    </div>
+                    );
+                  }
 
-                    <div style={styles.formGroup}>
-                      <label style={styles.label}>Your Comment <span style={{ color: '#ef4444' }}>*</span></label>
-                      <textarea
-                        value={reviewData.comment}
-                        onChange={(e) => setReviewData({ ...reviewData, comment: e.target.value })}
-                        placeholder="Share your experience with this class and trainer..."
-                        required
-                        rows={4}
-                        style={styles.textarea}
-                      />
-                    </div>
+                  if (!existingReview && reviewingBookingId === booking._id) {
+                    return (
+                      <form onSubmit={(e) => handleReviewSubmit(e, booking)} style={{ ...styles.formBox, borderColor: '#f59e0b' }}>
+                        <h4 style={{ ...styles.formTitle, color: '#d97706' }}>⭐ Share Your Feedback</h4>
+                        <p style={{ fontSize: '0.85rem', color: '#6c757d', marginBottom: '1rem' }}>
+                          Your feedback helps improve our classes and supports your trainer.
+                        </p>
 
-                    <button type="submit" style={{ ...styles.submitBtn, background: '#f59e0b' }}>
-                      Submit Feedback
-                    </button>
-                  </form>
-                )}
+                        <div style={styles.formGroup}>
+                          <label style={styles.label}>Rating</label>
+                          <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            {[1, 2, 3, 4, 5].map(num => (
+                              <button
+                                key={num}
+                                type="button"
+                                onClick={() => setReviewData({ ...reviewData, rating: num })}
+                                style={{
+                                  fontSize: '1.5rem',
+                                  background: 'none',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  opacity: num <= reviewData.rating ? 1 : 0.3,
+                                  transition: 'opacity 0.2s',
+                                }}
+                              >⭐</button>
+                            ))}
+                            <span style={{ alignSelf: 'center', color: '#6c757d', fontSize: '0.9rem' }}>
+                              ({reviewData.rating}/5)
+                            </span>
+                          </div>
+                        </div>
+
+                        <div style={styles.formGroup}>
+                          <label style={styles.label}>Your Comment <span style={{ color: '#ef4444' }}>*</span></label>
+                          <textarea
+                            value={reviewData.comment}
+                            onChange={(e) => setReviewData({ ...reviewData, comment: e.target.value })}
+                            placeholder="Share your experience with this class and trainer..."
+                            required
+                            rows={4}
+                            style={styles.textarea}
+                          />
+                        </div>
+
+                        <button type="submit" style={{ ...styles.submitBtn, background: '#f59e0b' }}>
+                          Submit Feedback
+                        </button>
+                      </form>
+                    );
+                  }
+
+                  return null;
+                })()}
               </div>
             ))}
           </div>
@@ -766,6 +846,14 @@ const styles = {
     cursor: 'pointer',
     fontWeight: '600',
     fontSize: '0.9rem',
+  },
+  existingReviewBox: {
+    background: '#eff6ff',
+    border: '1px solid #bfdbfe',
+    padding: '1rem',
+    borderRadius: '8px',
+    color: '#1e3a8a',
+    marginTop: '0.75rem',
   },
   // Modal styles
   modalOverlay: {
