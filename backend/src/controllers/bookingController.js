@@ -103,10 +103,35 @@ const confirmPayment = async (req, res) => {
   }
 };
 
+// Helper function to dynamically update bookings to completed
+const updateCompletedBookings = async (bookings) => {
+  const now = new Date();
+  let hasUpdates = false;
+
+  for (const booking of bookings) {
+    if (booking.status !== 'completed' && booking.status !== 'cancelled' && booking.class && booking.class.scheduleDate && booking.class.endTime) {
+      const classDate = new Date(booking.class.scheduleDate);
+      const [hours, minutes] = booking.class.endTime.split(':');
+      classDate.setHours(parseInt(hours, 10) || 0, parseInt(minutes, 10) || 0, 0, 0);
+
+      if (classDate < now) {
+        booking.status = 'completed';
+        await booking.save();
+        hasUpdates = true;
+      }
+    }
+  }
+  return hasUpdates;
+};
+
 // Get My Bookings
 const getMyBookings = async (req, res) => {
   try {
-    const bookings = await Booking.find({ user: req.user._id }).populate('class').populate('trainer', 'name email');
+    let bookings = await Booking.find({ user: req.user._id }).populate('class').populate('trainer', 'name email');
+    const updated = await updateCompletedBookings(bookings);
+    if (updated) {
+      bookings = await Booking.find({ user: req.user._id }).populate('class').populate('trainer', 'name email');
+    }
     res.json(bookings);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -116,7 +141,11 @@ const getMyBookings = async (req, res) => {
 // Get Trainer Bookings
 const getTrainerBookings = async (req, res) => {
   try {
-    const bookings = await Booking.find({ trainer: req.user._id }).populate('class').populate('user', 'name email');
+    let bookings = await Booking.find({ trainer: req.user._id }).populate('class').populate('user', 'name email');
+    const updated = await updateCompletedBookings(bookings);
+    if (updated) {
+      bookings = await Booking.find({ trainer: req.user._id }).populate('class').populate('user', 'name email');
+    }
     res.json(bookings);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -150,6 +179,22 @@ const cancelBooking = async (req, res) => {
 
     if (booking.status === 'cancelled') {
       return res.status(400).json({ message: 'Booking already cancelled' });
+    }
+
+    if (booking.status === 'completed') {
+      return res.status(400).json({ message: 'Cannot cancel a completed booking' });
+    }
+
+    if (booking.class && booking.class.scheduleDate && booking.class.endTime) {
+      const classDate = new Date(booking.class.scheduleDate);
+      const [hours, minutes] = booking.class.endTime.split(':');
+      classDate.setHours(parseInt(hours, 10) || 0, parseInt(minutes, 10) || 0, 0, 0);
+
+      if (classDate < new Date()) {
+        booking.status = 'completed';
+        await booking.save();
+        return res.status(400).json({ message: 'Cannot cancel a booking for a class that has already ended' });
+      }
     }
 
     booking.status = 'cancelled';
@@ -186,6 +231,22 @@ const rescheduleBooking = async (req, res) => {
     
     if (booking.user.toString() !== req.user._id.toString()) {
       return res.status(401).json({ message: 'Not authorized' });
+    }
+
+    if (booking.status === 'completed') {
+      return res.status(400).json({ message: 'Cannot reschedule a completed booking' });
+    }
+
+    if (booking.class && booking.class.scheduleDate && booking.class.endTime) {
+      const classDate = new Date(booking.class.scheduleDate);
+      const [hours, minutes] = booking.class.endTime.split(':');
+      classDate.setHours(parseInt(hours, 10) || 0, parseInt(minutes, 10) || 0, 0, 0);
+
+      if (classDate < new Date()) {
+        booking.status = 'completed';
+        await booking.save();
+        return res.status(400).json({ message: 'Cannot reschedule a booking for a class that has already ended' });
+      }
     }
 
     const oldClass = await Class.findById(booking.class._id);

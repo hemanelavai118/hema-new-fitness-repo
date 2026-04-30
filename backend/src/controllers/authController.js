@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const TrainerProfile = require('../models/TrainerProfile');
 const jwt = require('jsonwebtoken');
 
 const generateToken = (id) => {
@@ -24,6 +25,17 @@ const registerUser = async (req, res) => {
       fitnessGoals: fitnessGoals || [],
       preferences: preferences || []
     });
+
+    // Automatically create an empty TrainerProfile if role is trainer
+    if (user.role === 'trainer') {
+      await TrainerProfile.create({
+        user: user._id,
+        qualifications: [],
+        expertise: [],
+        specialization: [],
+        introductoryMessage: 'New trainer profile',
+      });
+    }
 
     if (user) {
       res.status(201).json({

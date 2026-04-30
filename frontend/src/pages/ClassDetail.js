@@ -261,7 +261,7 @@ const ClassDetail = () => {
           </div>
         </div>
 
-        {user && spotsAvailable > 0 && !clientSecret && !showDummyModal && (
+        {user?.role === 'user' && spotsAvailable > 0 && !clientSecret && !showDummyModal && (
           <>
             {alreadyBooked ? (
               <div style={styles.alreadyBookedBanner}>
