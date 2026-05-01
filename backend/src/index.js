@@ -12,7 +12,10 @@ const reviewRoutes = require('./routes/reviewRoutes');
 const recommendationRoutes = require('./routes/recommendationRoutes');
 
 // Connect to database
-connectDB();
+connectDB().then(() => {
+  const seedData = require('./utils/seedData');
+  seedData();
+});
 
 const app = express();
 

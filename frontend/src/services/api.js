@@ -55,6 +55,7 @@ export const classAPI = {
 export const bookingAPI = {
   createBooking: (bookingData) => api.post('/bookings', bookingData),
   confirmPayment: (paymentData) => api.post('/bookings/confirm-payment', paymentData),
+  getAllBookings: () => api.get('/bookings/all'),
   getMyBookings: () => api.get('/bookings/my-bookings'),
   getTrainerBookings: () => api.get('/bookings/trainer-bookings'),
   cancelBooking: (bookingId) => api.patch(`/bookings/${bookingId}/cancel`),

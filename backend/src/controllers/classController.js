@@ -3,13 +3,13 @@ const Class = require('../models/Class');
 // Create new class
 const createClass = async (req, res) => {
   try {
-    const { title, description, type, duration, scheduleDate, startTime, endTime, capacity, price, imageUrl } = req.body;
+    const { title, description, type, duration, scheduleDate, startTime, endTime, capacity, price, imageUrl, trainerId } = req.body;
 
     const newClass = await Class.create({
       title,
       description,
       type,
-      trainer: req.user._id,
+      trainer: (req.user.role === 'admin' && trainerId) ? trainerId : req.user._id,
       duration,
       scheduleDate,
       startTime,
@@ -70,7 +70,7 @@ const updateClass = async (req, res) => {
       return res.status(404).json({ message: 'Class not found' });
     }
 
-    if (fitnessClass.trainer.toString() !== req.user._id.toString()) {
+    if (fitnessClass.trainer.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(401).json({ message: 'Not authorized to update this class' });
     }
 
@@ -90,7 +90,7 @@ const deleteClass = async (req, res) => {
       return res.status(404).json({ message: 'Class not found' });
     }
 
-    if (fitnessClass.trainer.toString() !== req.user._id.toString()) {
+    if (fitnessClass.trainer.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(401).json({ message: 'Not authorized to delete this class' });
     }
 

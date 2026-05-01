@@ -2,6 +2,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { classAPI, bookingAPI, reviewAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
+
+const stripePublicKey = process.env.REACT_APP_STRIPE_PUBLIC_KEY;
+const stripePromise = stripePublicKey ? loadStripe(stripePublicKey) : null;
 
 // DummyPaymentModal — shown when Stripe is not configured (demo/test mode)
 const DummyPaymentModal = ({ bookingId, amount, className, onSuccess, onClose }) => {
@@ -16,8 +21,14 @@ const DummyPaymentModal = ({ bookingId, amount, className, onSuccess, onClose })
       return;
     }
 
-    const normalizedNumber = card.number.replace(/\s+/g, '');
+    const normalizedNumber = card.number.replace(/\D/g, '');
     const declineNumbers = ['4000000000000002', '4000000000000003', '4000000000009995', '4000000000000069'];
+
+    if (!/^[0-9]{16}$/.test(normalizedNumber)) {
+      setError('Invalid demo card number. Use 4242 4242 4242 4242.');
+      return;
+    }
+
     if (declineNumbers.includes(normalizedNumber)) {
       setError('Payment declined. Use 4242 4242 4242 4242 for successful demo checkout.');
       return;
@@ -184,12 +195,96 @@ const ClassDetail = () => {
     }
   };
 
+  const getClassEndDate = (fitnessClass) => {
+    if (!fitnessClass?.scheduleDate) return null;
+    const endDate = new Date(fitnessClass.scheduleDate);
+    if (fitnessClass.endTime) {
+      const [hours, minutes] = fitnessClass.endTime.split(':');
+      endDate.setHours(parseInt(hours, 10) || 0, parseInt(minutes, 10) || 0, 0, 0);
+    } else if (fitnessClass.duration) {
+      endDate.setMinutes(endDate.getMinutes() + Number(fitnessClass.duration));
+    }
+    return endDate;
+  };
+
+  const isClassCompleted = (fitnessClass) => {
+    const endDate = getClassEndDate(fitnessClass);
+    return endDate ? endDate <= new Date() : false;
+  };
+
   const handlePaymentSuccess = () => {
     setShowDummyModal(false);
     alert('✅ Payment successful! Your booking is confirmed. Redirecting to My Bookings...');
     navigate('/my-bookings');
   };
 
+  const handleStripePaymentSuccess = async () => {
+    setClientSecret('');
+    setPendingBookingId(null);
+    alert('✅ Payment successful! Your booking is confirmed. Redirecting to My Bookings...');
+    navigate('/my-bookings');
+  };
+
+  const StripePaymentForm = ({ clientSecret, bookingId, onSuccess }) => {
+    const stripe = useStripe();
+    const elements = useElements();
+    const [localError, setLocalError] = useState('');
+    const [stripeProcessing, setStripeProcessing] = useState(false);
+
+    const handleSubmit = async (e) => {
+      e.preventDefault();
+      if (!stripe || !elements) {
+        setLocalError('Stripe is still initializing. Please wait a moment.');
+        return;
+      }
+
+      const cardElement = elements.getElement(CardElement);
+      if (!cardElement) {
+        setLocalError('Card input is not available.');
+        return;
+      }
+
+      setStripeProcessing(true);
+      setLocalError('');
+
+      const { error: stripeErrorResult, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
+        payment_method: {
+          card: cardElement,
+        },
+      });
+
+      if (stripeErrorResult) {
+        setLocalError(stripeErrorResult.message || 'Payment failed. Please try again.');
+        setStripeProcessing(false);
+        return;
+      }
+
+      if (paymentIntent?.status === 'succeeded') {
+        try {
+          await bookingAPI.confirmPayment({ paymentIntentId: paymentIntent.id, bookingId });
+          onSuccess();
+        } catch (err) {
+          setLocalError(err.response?.data?.message || 'Payment succeeded but confirmation failed.');
+          setStripeProcessing(false);
+        }
+      } else {
+        setLocalError('Payment did not complete. Please try again.');
+        setStripeProcessing(false);
+      }
+    };
+
+    return (
+      <form onSubmit={handleSubmit} style={styles.paymentForm}>
+        <div style={styles.cardField}>
+          <CardElement options={{ style: { base: { fontSize: '16px', color: '#1f2937', '::placeholder': { color: '#9ca3af' } }, invalid: { color: '#b91c1c' } } }} />
+        </div>
+        {localError && <div style={styles.errorMessage}>{localError}</div>}
+        <button type="submit" disabled={stripeProcessing} style={styles.payButton}>
+          {stripeProcessing ? '⏳ Processing payment...' : `Pay $${fitnessClass?.price || 0}`}
+        </button>
+      </form>
+    );
+  };
 
   if (loading) return <div style={styles.container}>Loading...</div>;
 
@@ -261,7 +356,7 @@ const ClassDetail = () => {
           </div>
         </div>
 
-        {user?.role === 'user' && spotsAvailable > 0 && !clientSecret && !showDummyModal && (
+        {user?.role === 'user' && spotsAvailable > 0 && !clientSecret && !showDummyModal && !isClassCompleted(fitnessClass) && (
           <>
             {alreadyBooked ? (
               <div style={styles.alreadyBookedBanner}>
@@ -278,11 +373,39 @@ const ClassDetail = () => {
             )}
           </>
         )}
+        {user?.role === 'user' && isClassCompleted(fitnessClass) && (
+          <div style={styles.alreadyBookedBanner}>
+            ⚠️ This class has already finished and cannot be booked.
+          </div>
+        )}
 
-        {clientSecret && (
+        {clientSecret && clientSecret !== 'dummy_secret_mode' && stripePromise && (
           <div style={styles.paymentSection}>
-            <h3>Complete Payment (Stripe)</h3>
-            <p style={{ color: '#6c757d', fontSize: '0.9rem' }}>Stripe payment form would appear here with a live key.</p>
+            <h3>Complete Payment</h3>
+            <p style={{ color: '#6c757d', fontSize: '0.9rem' }}>Enter your card details below to complete the booking with Stripe.</p>
+            <Elements stripe={stripePromise}>
+              <StripePaymentForm
+                clientSecret={clientSecret}
+                bookingId={pendingBookingId}
+                onSuccess={handleStripePaymentSuccess}
+              />
+            </Elements>
+          </div>
+        )}
+
+        {clientSecret && clientSecret !== 'dummy_secret_mode' && !stripePromise && (
+          <div style={styles.paymentSection}>
+            <h3>Stripe payment is not configured</h3>
+            <p style={{ color: '#b91c1c' }}>
+              The backend generated a Stripe payment intent, but the frontend does not have a Stripe publishable key configured. Please set <code>REACT_APP_STRIPE_PUBLIC_KEY</code> in the frontend environment.
+            </p>
+          </div>
+        )}
+
+        {clientSecret && clientSecret === 'dummy_secret_mode' && (
+          <div style={styles.paymentSection}>
+            <h3>Complete Payment (Demo)</h3>
+            <p style={{ color: '#6c757d', fontSize: '0.9rem' }}>This app is running in demo mode. Use the test card details in the pop-up to complete payment.</p>
           </div>
         )}
       </div>
@@ -437,6 +560,17 @@ const styles = {
     flexDirection: 'column',
     gap: '1rem',
     marginTop: '1rem',
+  },
+  cardField: {
+    padding: '1rem',
+    border: '1px solid #d1d5db',
+    borderRadius: '8px',
+    background: '#fff',
+  },
+  errorMessage: {
+    color: '#b91c1c',
+    fontSize: '0.9rem',
+    marginTop: '0.5rem',
   },
   payButton: {
     padding: '1rem',

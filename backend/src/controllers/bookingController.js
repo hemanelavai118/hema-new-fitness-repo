@@ -3,6 +3,19 @@ const Class = require('../models/Class');
 const sendEmail = require('../utils/emailService');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
+const getClassEndDateTime = (fitnessClass) => {
+  const classDate = new Date(fitnessClass.scheduleDate);
+
+  if (fitnessClass.endTime) {
+    const [hours, minutes] = fitnessClass.endTime.split(':');
+    classDate.setHours(parseInt(hours, 10) || 0, parseInt(minutes, 10) || 0, 0, 0);
+  } else if (fitnessClass.duration) {
+    classDate.setMinutes(classDate.getMinutes() + Number(fitnessClass.duration));
+  }
+
+  return classDate;
+};
+
 // Create Booking and get Payment Intent
 const createBooking = async (req, res) => {
   try {
@@ -25,6 +38,12 @@ const createBooking = async (req, res) => {
 
     if (fitnessClass.enrolledUsers.length >= fitnessClass.capacity) {
       return res.status(400).json({ message: 'Class is full' });
+    }
+
+    const now = new Date();
+    const classEndDate = getClassEndDateTime(fitnessClass);
+    if (classEndDate <= now) {
+      return res.status(400).json({ message: 'Cannot book a class that has already ended.' });
     }
 
     const booking = await Booking.create({
@@ -66,6 +85,8 @@ const confirmPayment = async (req, res) => {
 
     if (paymentIntentId === 'dummy_success_id') {
       isSuccess = true;
+    } else if (paymentIntentId === 'dummy_decline_id') {
+      isSuccess = false;
     } else {
       // In production, this should ideally be handled via Stripe Webhooks
       const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
@@ -109,12 +130,10 @@ const updateCompletedBookings = async (bookings) => {
   let hasUpdates = false;
 
   for (const booking of bookings) {
-    if (booking.status !== 'completed' && booking.status !== 'cancelled' && booking.class && booking.class.scheduleDate && booking.class.endTime) {
-      const classDate = new Date(booking.class.scheduleDate);
-      const [hours, minutes] = booking.class.endTime.split(':');
-      classDate.setHours(parseInt(hours, 10) || 0, parseInt(minutes, 10) || 0, 0, 0);
+    if (booking.status !== 'completed' && booking.status !== 'cancelled' && booking.class && booking.class.scheduleDate) {
+      const classEndDate = getClassEndDateTime(booking.class);
 
-      if (classDate < now) {
+      if (classEndDate <= now) {
         booking.status = 'completed';
         await booking.save();
         hasUpdates = true;
@@ -173,7 +192,7 @@ const cancelBooking = async (req, res) => {
     
     if (!booking) return res.status(404).json({ message: 'Booking not found' });
     
-    if (booking.user.toString() !== req.user._id.toString() && req.user.role !== 'trainer') {
+    if (booking.user.toString() !== req.user._id.toString() && req.user.role !== 'trainer' && req.user.role !== 'admin') {
       return res.status(401).json({ message: 'Not authorized' });
     }
 
@@ -185,12 +204,10 @@ const cancelBooking = async (req, res) => {
       return res.status(400).json({ message: 'Cannot cancel a completed booking' });
     }
 
-    if (booking.class && booking.class.scheduleDate && booking.class.endTime) {
-      const classDate = new Date(booking.class.scheduleDate);
-      const [hours, minutes] = booking.class.endTime.split(':');
-      classDate.setHours(parseInt(hours, 10) || 0, parseInt(minutes, 10) || 0, 0, 0);
+    if (booking.class && booking.class.scheduleDate) {
+      const classEndDate = getClassEndDateTime(booking.class);
 
-      if (classDate < new Date()) {
+      if (classEndDate <= new Date()) {
         booking.status = 'completed';
         await booking.save();
         return res.status(400).json({ message: 'Cannot cancel a booking for a class that has already ended' });
@@ -229,7 +246,7 @@ const rescheduleBooking = async (req, res) => {
     const booking = await Booking.findById(bookingId).populate('class');
     if (!booking) return res.status(404).json({ message: 'Booking not found' });
     
-    if (booking.user.toString() !== req.user._id.toString()) {
+    if (booking.user.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(401).json({ message: 'Not authorized' });
     }
 
@@ -237,12 +254,10 @@ const rescheduleBooking = async (req, res) => {
       return res.status(400).json({ message: 'Cannot reschedule a completed booking' });
     }
 
-    if (booking.class && booking.class.scheduleDate && booking.class.endTime) {
-      const classDate = new Date(booking.class.scheduleDate);
-      const [hours, minutes] = booking.class.endTime.split(':');
-      classDate.setHours(parseInt(hours, 10) || 0, parseInt(minutes, 10) || 0, 0, 0);
+    if (booking.class && booking.class.scheduleDate) {
+      const classEndDate = getClassEndDateTime(booking.class);
 
-      if (classDate < new Date()) {
+      if (classEndDate <= new Date()) {
         booking.status = 'completed';
         await booking.save();
         return res.status(400).json({ message: 'Cannot reschedule a booking for a class that has already ended' });

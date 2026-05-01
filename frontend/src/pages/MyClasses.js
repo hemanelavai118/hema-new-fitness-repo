@@ -108,6 +108,23 @@ const MyClasses = () => {
     }
   };
 
+  const getBookingEndDate = (booking) => {
+    if (!booking?.class?.scheduleDate) return null;
+    const endDate = new Date(booking.class.scheduleDate);
+    if (booking.class.endTime) {
+      const [hours, minutes] = booking.class.endTime.split(':');
+      endDate.setHours(parseInt(hours, 10) || 0, parseInt(minutes, 10) || 0, 0, 0);
+    } else if (booking.class.duration) {
+      endDate.setMinutes(endDate.getMinutes() + Number(booking.class.duration));
+    }
+    return endDate;
+  };
+
+  const isBookingCompleted = (booking) => {
+    const endDate = getBookingEndDate(booking);
+    return endDate ? endDate <= new Date() : false;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -277,7 +294,7 @@ const MyClasses = () => {
                     <span style={styles.label}>Status:</span>
                     <span style={getStatusStyle(booking.status)}>{booking.status}</span>
                   </div>
-                  {booking.status !== 'cancelled' && (
+                  {booking.status !== 'cancelled' && booking.status !== 'completed' && !isBookingCompleted(booking) && (
                     <button 
                       onClick={() => handleCancelBooking(booking._id)}
                       style={styles.cancelBookingButton}

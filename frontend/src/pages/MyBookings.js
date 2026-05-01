@@ -16,6 +16,24 @@ const MyBookings = () => {
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [cardDetails, setCardDetails] = useState({ number: '4242 4242 4242 4242', expiry: '12/26', cvv: '123', name: '' });
 
+  const getBookingEndDate = (booking) => {
+    if (!booking?.class?.scheduleDate) return null;
+
+    const endDate = new Date(booking.class.scheduleDate);
+    if (booking.class.endTime) {
+      const [hours, minutes] = booking.class.endTime.split(':');
+      endDate.setHours(parseInt(hours, 10) || 0, parseInt(minutes, 10) || 0, 0, 0);
+    } else if (booking.class.duration) {
+      endDate.setMinutes(endDate.getMinutes() + Number(booking.class.duration));
+    }
+    return endDate;
+  };
+
+  const isBookingCompleted = (booking) => {
+    const endDate = getBookingEndDate(booking);
+    return endDate ? endDate <= new Date() : false;
+  };
+
   useEffect(() => {
     fetchBookings();
     fetchClasses();
@@ -113,14 +131,35 @@ const MyBookings = () => {
       alert('Please enter the cardholder name.');
       return;
     }
+
+    const normalizedNumber = cardDetails.number.replace(/\D/g, '');
+    const declineNumbers = ['4000000000000002', '4000000000000003', '4000000000009995', '4000000000000069'];
+
+    if (!/^[0-9]{16}$/.test(normalizedNumber)) {
+      alert('Invalid demo card number. Use 4242 4242 4242 4242.');
+      return;
+    }
+
+    if (declineNumbers.includes(normalizedNumber)) {
+      alert('Payment declined. Use 4242 4242 4242 4242 for successful demo checkout.');
+      return;
+    }
+
+    if (normalizedNumber !== '4242424242424242') {
+      alert('Invalid demo card. Use 4242 4242 4242 4242 for successful checkout.');
+      return;
+    }
+
     setPaymentProcessing(true);
     try {
-      // Simulate payment processing delay
       await new Promise(resolve => setTimeout(resolve, 1500));
+      const paymentIntentId = 'dummy_success_id';
+
       await bookingAPI.confirmPayment({
-        paymentIntentId: 'dummy_success_id',
+        paymentIntentId,
         bookingId: paymentModal.bookingId,
       });
+
       setPaymentModal(null);
       setPaymentProcessing(false);
       alert('✅ Payment successful! Your booking is now confirmed.');
@@ -369,24 +408,24 @@ const MyBookings = () => {
                 {/* Action Buttons */}
                 <div style={styles.actions}>
                   {/* Pay Now button for pending bookings */}
-                  {booking.paymentStatus === 'pending' && booking.status !== 'cancelled' && (
+                  {booking.paymentStatus === 'pending' && booking.status !== 'cancelled' && !isBookingCompleted(booking) && (
                     <button
                       className="action-btn"
                       onClick={() => openPaymentModal(booking)}
-                      style={{ ...styles.actionBtn, background: '#10b981' }}
+                      style={{ ...styles.actionBtn, background: '#10b981', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)' }}
                     >
                       💳 Pay Now
                     </button>
                   )}
 
-                  {booking.status !== 'cancelled' && booking.status !== 'completed' && (
+                  {booking.status !== 'cancelled' && booking.status !== 'completed' && !isBookingCompleted(booking) && (
                     <>
                       <button
                         className="action-btn"
                         onClick={() => handleCancelBooking(booking._id)}
-                        style={{ ...styles.actionBtn, background: '#ef4444' }}
+                        style={{ ...styles.actionBtn, background: '#ef4444', opacity: 0.9 }}
                       >
-                        ✖ Cancel Booking
+                        ✖ Cancel
                       </button>
                       <button
                         className="action-btn"
@@ -408,12 +447,12 @@ const MyBookings = () => {
                           onClick={() => setReviewingBookingId(reviewingBookingId === booking._id ? null : booking._id)}
                           style={{ ...styles.actionBtn, background: reviewingBookingId === booking._id ? '#495057' : '#0ea5e9' }}
                         >
-                          📝 {reviewingBookingId === booking._id ? 'Hide Feedback' : 'View Submitted Feedback'}
+                          📝 {reviewingBookingId === booking._id ? 'Hide Feedback' : 'View Your Review'}
                         </button>
                       );
                     }
 
-                    if (booking.status === 'completed' || (booking.status === 'reserved' && booking.paymentStatus === 'paid')) {
+                    if (booking.status === 'completed' || (booking.status === 'reserved' && booking.paymentStatus === 'paid') || isBookingCompleted(booking)) {
                       return (
                         <button
                           className="action-btn"
@@ -421,9 +460,14 @@ const MyBookings = () => {
                             setReviewingBookingId(reviewingBookingId === booking._id ? null : booking._id);
                             setReviewData({ rating: 5, comment: '' });
                           }}
-                          style={{ ...styles.actionBtn, background: reviewingBookingId === booking._id ? '#495057' : '#f59e0b' }}
+                          style={{ 
+                            ...styles.actionBtn, 
+                            background: reviewingBookingId === booking._id ? '#495057' : 'linear-gradient(135deg, #f59e0b, #d97706)',
+                            boxShadow: reviewingBookingId === booking._id ? 'none' : '0 4px 15px rgba(245, 158, 11, 0.4)',
+                            transform: reviewingBookingId === booking._id ? 'none' : 'scale(1.05)'
+                          }}
                         >
-                          ⭐ {reviewingBookingId === booking._id ? 'Cancel Feedback' : 'Give Feedback'}
+                          ⭐ {reviewingBookingId === booking._id ? 'Cancel Feedback' : 'Give Feedback Now'}
                         </button>
                       );
                     }

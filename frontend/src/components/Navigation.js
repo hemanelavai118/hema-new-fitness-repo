@@ -44,6 +44,9 @@ const Navigation = () => {
                   <Link to="/profile" style={styles.link}>Profile</Link>
                 </>
               )}
+              {user?.role === 'admin' && (
+                <Link to="/admin-dashboard" style={styles.adminLink}>Admin Dashboard</Link>
+              )}
               <button onClick={handleLogout} style={styles.logoutBtn}>
                 Logout
               </button>
@@ -57,11 +60,12 @@ const Navigation = () => {
 
 const styles = {
   nav: {
-    backgroundColor: '#333',
+    backgroundColor: '#1e293b',
     padding: '1rem 0',
     position: 'sticky',
     top: 0,
     zIndex: 1000,
+    boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
   },
   navContainer: {
     maxWidth: '1200px',
@@ -69,13 +73,16 @@ const styles = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '0 1rem',
+    padding: '0 1.5rem',
   },
   logo: {
     fontSize: '1.5rem',
-    fontWeight: 'bold',
+    fontWeight: '800',
     color: '#fff',
     textDecoration: 'none',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
   },
   navLinks: {
     display: 'flex',
@@ -84,19 +91,32 @@ const styles = {
     flexWrap: 'wrap',
   },
   link: {
-    color: '#fff',
+    color: '#cbd5e1',
     textDecoration: 'none',
-    fontSize: '1rem',
-    transition: 'color 0.3s',
+    fontSize: '0.95rem',
+    fontWeight: '500',
+    transition: 'color 0.2s',
+  },
+  adminLink: {
+    color: '#fbbf24',
+    textDecoration: 'none',
+    fontSize: '0.95rem',
+    fontWeight: '700',
+    padding: '0.5rem 1rem',
+    border: '1px solid #fbbf24',
+    borderRadius: '6px',
+    transition: 'all 0.2s',
   },
   logoutBtn: {
-    backgroundColor: '#ff4444',
+    backgroundColor: '#ef4444',
     color: '#fff',
     border: 'none',
-    padding: '0.5rem 1rem',
-    borderRadius: '4px',
+    padding: '0.5rem 1.25rem',
+    borderRadius: '6px',
     cursor: 'pointer',
-    fontSize: '1rem',
+    fontSize: '0.95rem',
+    fontWeight: '600',
+    transition: 'background-color 0.2s',
   },
 };
 

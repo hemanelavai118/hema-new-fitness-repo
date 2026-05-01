@@ -17,13 +17,14 @@ import Recommendations from './pages/Recommendations';
 import Profile from './pages/Profile';
 import TrainerProfile from './pages/TrainerProfile';
 import MyClasses from './pages/MyClasses';
+import AdminDashboard from './pages/AdminDashboard';
 
 import './App.css';
 
 function App() {
   return (
     <AuthProvider>
-      <Router>
+      <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <Navigation />
         <Routes>
           <Route path="/" element={<Home />} />
@@ -72,22 +73,31 @@ function App() {
           
           {/* Trainer Routes */}
           <Route 
-            path="/trainer-profile" 
-            element={
-              <ProtectedRoute>
-                <TrainerProfile />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
             path="/my-classes" 
             element={
-              <ProtectedRoute>
+              <ProtectedRoute requiredRole="trainer">
                 <MyClasses />
               </ProtectedRoute>
             } 
           />
-          
+          <Route 
+            path="/trainer-profile" 
+            element={
+              <ProtectedRoute requiredRole="trainer">
+                <TrainerProfile />
+              </ProtectedRoute>
+            } 
+          />
+          {/* Admin Routes */}
+          <Route 
+            path="/admin-dashboard" 
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <AdminDashboard />
+              </ProtectedRoute>
+            } 
+          />
+
           {/* 404 */}
           <Route path="*" element={<div style={{textAlign: 'center', padding: '2rem'}}>Page not found</div>} />
         </Routes>
