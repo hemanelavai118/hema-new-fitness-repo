@@ -46,30 +46,22 @@ const createBooking = async (req, res) => {
       return res.status(400).json({ message: 'Cannot book a class that has already ended.' });
     }
 
-    const booking = await Booking.create({
-      user: req.user._id,
-      class: classId,
-      trainer: fitnessClass.trainer,
-      status: 'reserved',
-      paymentStatus: 'pending'
-    });
-
     let clientSecret = null;
     if (process.env.STRIPE_SECRET_KEY && process.env.STRIPE_SECRET_KEY.startsWith('sk_')) {
       const paymentIntent = await stripe.paymentIntents.create({
         amount: Math.round(fitnessClass.price * 100),
         currency: 'usd',
-        metadata: { bookingId: booking._id.toString() }
+        metadata: { classId: classId.toString(), userId: req.user._id.toString() }
       });
       clientSecret = paymentIntent.client_secret;
     } else {
       clientSecret = 'dummy_secret_mode';
     }
 
-    res.status(201).json({
-      booking,
+    res.status(200).json({
       clientSecret,
-      message: 'Booking initialized. Please complete payment.'
+      classId,
+      message: 'Payment initialized. Please complete payment.'
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -79,7 +71,7 @@ const createBooking = async (req, res) => {
 // Confirm Payment
 const confirmPayment = async (req, res) => {
   try {
-    const { paymentIntentId, bookingId } = req.body;
+    const { paymentIntentId, classId, bookingId } = req.body;
     
     let isSuccess = false;
 
@@ -96,24 +88,59 @@ const confirmPayment = async (req, res) => {
     }
     
     if (isSuccess) {
-      const booking = await Booking.findById(bookingId).populate('class').populate('trainer');
-      if (!booking) return res.status(404).json({ message: 'Booking not found' });
-
-      booking.paymentStatus = 'paid';
-      booking.transactionId = paymentIntentId;
-      await booking.save();
+      let booking;
       
-      const fitnessClass = await Class.findById(booking.class._id);
-      if(!fitnessClass.enrolledUsers.includes(req.user._id)){
-         fitnessClass.enrolledUsers.push(req.user._id);
-         await fitnessClass.save();
-      }
+      // Support for existing pending bookings
+      if (bookingId) {
+        booking = await Booking.findById(bookingId).populate('class').populate('trainer');
+        if (!booking) return res.status(404).json({ message: 'Booking not found' });
 
-      await sendEmail({
-        email: req.user.email,
-        subject: 'Booking Confirmation',
-        message: `Your booking for ${fitnessClass.title} is confirmed.`
-      });
+        booking.paymentStatus = 'paid';
+        booking.status = 'reserved';
+        booking.transactionId = paymentIntentId;
+        await booking.save();
+        
+        const fitnessClass = await Class.findById(booking.class._id);
+        if(!fitnessClass.enrolledUsers.includes(req.user._id)){
+           fitnessClass.enrolledUsers.push(req.user._id);
+           await fitnessClass.save();
+        }
+
+        await sendEmail({
+          email: req.user.email,
+          subject: 'Booking Confirmation',
+          message: `Your booking for ${fitnessClass.title} is confirmed.`
+        });
+      } else {
+        const fitnessClass = await Class.findById(classId).populate('trainer');
+        if (!fitnessClass) return res.status(404).json({ message: 'Class not found' });
+
+        if (fitnessClass.enrolledUsers.length >= fitnessClass.capacity) {
+          return res.status(400).json({ message: 'Class is full' });
+        }
+
+        booking = await Booking.create({
+          user: req.user._id,
+          class: classId,
+          trainer: fitnessClass.trainer._id,
+          status: 'reserved',
+          paymentStatus: 'paid',
+          transactionId: paymentIntentId
+        });
+        
+        if(!fitnessClass.enrolledUsers.includes(req.user._id)){
+           fitnessClass.enrolledUsers.push(req.user._id);
+           await fitnessClass.save();
+        }
+
+        await sendEmail({
+          email: req.user.email,
+          subject: 'Booking Confirmation',
+          message: `Your booking for ${fitnessClass.title} is confirmed.`
+        });
+
+        booking = await Booking.findById(booking._id).populate('class').populate('trainer');
+      }
 
       res.json({ message: 'Payment confirmed and booking completed successfully', booking });
     } else {
@@ -241,7 +268,7 @@ const cancelBooking = async (req, res) => {
 const rescheduleBooking = async (req, res) => {
   try {
     const { bookingId } = req.params;
-    const { newClassId } = req.body;
+    const { newStartTime, newEndTime } = req.body;
     
     const booking = await Booking.findById(bookingId).populate('class');
     if (!booking) return res.status(404).json({ message: 'Booking not found' });
@@ -264,34 +291,26 @@ const rescheduleBooking = async (req, res) => {
       }
     }
 
-    const oldClass = await Class.findById(booking.class._id);
-    const newClass = await Class.findById(newClassId);
+    const fitnessClass = await Class.findById(booking.class._id);
+    if (!fitnessClass) return res.status(404).json({ message: 'Class not found' });
+
+    // Update the class times
+    fitnessClass.startTime = newStartTime;
+    fitnessClass.endTime = newEndTime;
     
-    if (!newClass) return res.status(404).json({ message: 'New class not found' });
-    if (newClass.enrolledUsers.length >= newClass.capacity) {
-      return res.status(400).json({ message: 'New class is full' });
-    }
-
-    // Remove from old class
-    if (oldClass) {
-      oldClass.enrolledUsers = oldClass.enrolledUsers.filter(userId => userId.toString() !== booking.user.toString());
-      await oldClass.save();
-    }
-
-    // Add to new class
-    if (!newClass.enrolledUsers.includes(req.user._id)) {
-      newClass.enrolledUsers.push(req.user._id);
-      await newClass.save();
-    }
-
-    booking.class = newClassId;
-    booking.trainer = newClass.trainer;
-    await booking.save();
+    // Recalculate duration
+    const [startHours, startMinutes] = newStartTime.split(':').map(Number);
+    const [endHours, endMinutes] = newEndTime.split(':').map(Number);
+    const startTotalMinutes = startHours * 60 + startMinutes;
+    const endTotalMinutes = endHours * 60 + endMinutes;
+    fitnessClass.duration = endTotalMinutes - startTotalMinutes;
+    
+    await fitnessClass.save();
 
     await sendEmail({
       email: req.user.email,
       subject: 'Booking Rescheduled',
-      message: `Your booking has been rescheduled to ${newClass.title}.`
+      message: `Your booking time has been rescheduled to ${newStartTime} - ${newEndTime}.`
     });
 
     res.json({ message: 'Booking rescheduled successfully', booking });
