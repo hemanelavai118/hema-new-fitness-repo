@@ -29,7 +29,9 @@ const Navigation = () => {
               {user?.role === 'user' && (
                 <Link to="/classes" style={styles.link}>Classes</Link>
               )}
-              <Link to="/trainers" style={styles.link}>Trainers</Link>
+              {user?.role !== 'admin' && (
+                <Link to="/trainers" style={styles.link}>Trainers</Link>
+              )}
               {user?.role === 'trainer' && (
                 <>
                   <Link to="/my-classes" style={styles.link}>My Classes</Link>

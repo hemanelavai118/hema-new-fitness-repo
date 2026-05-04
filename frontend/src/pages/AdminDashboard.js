@@ -10,6 +10,10 @@ const AdminDashboard = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [formData, setFormData] = useState({});
   const [editClassId, setEditClassId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [paymentFilter, setPaymentFilter] = useState('all');
+  const [classSearchTerm, setClassSearchTerm] = useState('');
 
   const totalBookings = bookings.length;
   const paidBookings = bookings.filter(b => b.paymentStatus === 'paid').length;
@@ -109,6 +113,28 @@ const AdminDashboard = () => {
     setFormData({});
   };
 
+  // Filter bookings based on search and filters
+  const filteredBookings = bookings.filter(booking => {
+    const matchesSearch = searchTerm === '' || 
+      booking.user?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      booking.user?.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      booking.class?.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      booking.trainer?.name?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesStatus = statusFilter === 'all' || booking.status === statusFilter;
+    const matchesPayment = paymentFilter === 'all' || booking.paymentStatus === paymentFilter;
+    
+    return matchesSearch && matchesStatus && matchesPayment;
+  });
+
+  // Filter classes based on search
+  const filteredClasses = classes.filter(classItem => {
+    return classSearchTerm === '' ||
+      classItem.title?.toLowerCase().includes(classSearchTerm.toLowerCase()) ||
+      classItem.trainer?.name?.toLowerCase().includes(classSearchTerm.toLowerCase()) ||
+      classItem.type?.toLowerCase().includes(classSearchTerm.toLowerCase());
+  });
+
   if (loading) return <div style={styles.loading}>Loading Dashboard...</div>;
 
   return (
@@ -155,18 +181,45 @@ const AdminDashboard = () => {
             onClick={() => setActiveTab('bookings')} 
             style={activeTab === 'bookings' ? styles.activeTab : styles.tab}
           >
-            All Bookings ({bookings.length})
+            All Bookings ({filteredBookings.length})
           </button>
           <button 
             onClick={() => setActiveTab('classes')} 
             style={activeTab === 'classes' ? styles.activeTab : styles.tab}
           >
-            Manage Classes ({classes.length})
+            Manage Classes ({filteredClasses.length})
           </button>
         </div>
 
         {activeTab === 'bookings' ? (
           <div style={styles.section}>
+            {/* Search and Filter Controls */}
+            <div style={styles.filters}>
+              <div style={styles.searchBox}>
+                <input
+                  type="text"
+                  placeholder="Search by user, class, or trainer..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  style={styles.searchInput}
+                />
+                <button onClick={() => { setSearchTerm(''); setStatusFilter('all'); setPaymentFilter('all'); }} style={{...styles.searchBtn, background: '#64748b'}}>Clear Filters</button>
+              </div>
+              <div style={styles.filterSelects}>
+                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={styles.filterSelect}>
+                  <option value="all">All Statuses</option>
+                  <option value="reserved">Reserved</option>
+                  <option value="completed">Completed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+                <select value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)} style={styles.filterSelect}>
+                  <option value="all">All Payments</option>
+                  <option value="paid">Paid</option>
+                  <option value="pending">Pending</option>
+                </select>
+              </div>
+            </div>
+
             <table style={styles.table}>
               <thead>
                 <tr>
@@ -180,7 +233,7 @@ const AdminDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {bookings.map(b => (
+                {filteredBookings.map(b => (
                   <tr key={b._id}>
                     <td>{b.user?.name}<br/><small style={{color: '#64748b'}}>{b.user?.email}</small></td>
                     <td><span style={{fontWeight: '600'}}>{b.class?.title}</span></td>
@@ -204,8 +257,22 @@ const AdminDashboard = () => {
           </div>
         ) : (
           <div style={styles.section}>
+            {/* Class Search */}
+            <div style={styles.filters}>
+              <div style={styles.searchBox}>
+                <input
+                  type="text"
+                  placeholder="Search classes by title, trainer, or type..."
+                  value={classSearchTerm}
+                  onChange={(e) => setClassSearchTerm(e.target.value)}
+                  style={styles.searchInput}
+                />
+                <button onClick={() => setClassSearchTerm('')} style={{...styles.searchBtn, background: '#64748b'}}>Clear</button>
+              </div>
+            </div>
+
             <div style={styles.grid}>
-              {classes.map(c => (
+              {filteredClasses.map(c => (
                 <div key={c._id} style={styles.card}>
                   <div style={{...styles.colorBar, background: '#3b82f6'}}></div>
                   <h3 style={{marginTop: '0'}}>{c.title}</h3>
@@ -311,6 +378,12 @@ const styles = {
   tab: { padding: '1rem 2rem', border: 'none', background: 'none', cursor: 'pointer', fontSize: '1.1rem', color: '#64748b' },
   activeTab: { padding: '1rem 2rem', border: 'none', borderBottom: '2px solid #3b82f6', background: 'none', cursor: 'pointer', fontSize: '1.1rem', color: '#3b82f6', fontWeight: 'bold' },
   section: { background: '#fff', padding: '1.5rem', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' },
+  filters: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', gap: '1rem', flexWrap: 'wrap' },
+  searchBox: { display: 'flex', gap: '0.5rem', flex: 1, maxWidth: '400px' },
+  searchInput: { flex: 1, padding: '0.5rem 0.75rem', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '0.9rem' },
+  searchBtn: { background: '#3b82f6', color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.9rem' },
+  filterSelects: { display: 'flex', gap: '0.5rem' },
+  filterSelect: { padding: '0.5rem 0.75rem', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '0.9rem', background: '#fff' },
   table: { width: '100%', borderCollapse: 'collapse', textAlign: 'left' },
   grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.5rem' },
   card: { padding: '1.5rem', border: '1px solid #e2e8f0', borderRadius: '8px' },

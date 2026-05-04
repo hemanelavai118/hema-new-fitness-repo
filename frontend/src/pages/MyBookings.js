@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { bookingAPI, reviewAPI, classAPI } from '../services/api';
+import { bookingAPI, reviewAPI } from '../services/api';
 
 const MyBookings = () => {
   const [bookings, setBookings] = useState([]);
@@ -8,9 +8,6 @@ const MyBookings = () => {
   const [reviewingBookingId, setReviewingBookingId] = useState(null);
   const [reviewData, setReviewData] = useState({ rating: 5, comment: '' });
   const [userReviews, setUserReviews] = useState([]);
-  const [availableClasses, setAvailableClasses] = useState([]);
-  const [reschedulingId, setReschedulingId] = useState(null);
-  const [newClassId, setNewClassId] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [paymentModal, setPaymentModal] = useState(null); // { bookingId, amount, className }
   const [paymentProcessing, setPaymentProcessing] = useState(false);
@@ -36,18 +33,9 @@ const MyBookings = () => {
 
   useEffect(() => {
     fetchBookings();
-    fetchClasses();
     fetchUserReviews();
   }, []);
 
-  const fetchClasses = async () => {
-    try {
-      const response = await classAPI.getClasses();
-      setAvailableClasses(response.data);
-    } catch (err) {
-      console.error('Failed to fetch classes for rescheduling', err);
-    }
-  };
 
   const fetchBookings = async () => {
     try {
@@ -81,23 +69,6 @@ const MyBookings = () => {
     }
   };
 
-  const handleRescheduleBooking = async (e, bookingId) => {
-    e.preventDefault();
-    if (!newClassId) {
-      alert('Please select a new class to reschedule.');
-      return;
-    }
-    try {
-      await bookingAPI.rescheduleBooking(bookingId, newClassId);
-      alert('Booking rescheduled successfully');
-      setReschedulingId(null);
-      setNewClassId('');
-      fetchBookings();
-    } catch (err) {
-      alert(err.response?.data?.message || 'Failed to reschedule booking');
-    }
-  };
-
   const handleReviewSubmit = async (e, booking) => {
     e.preventDefault();
     try {
@@ -119,6 +90,7 @@ const MyBookings = () => {
   const openPaymentModal = (booking) => {
     setPaymentModal({
       bookingId: booking._id,
+      classId: booking.class?._id,
       amount: booking.class?.price || 0,
       className: booking.class?.title || 'Class',
     });
@@ -136,17 +108,12 @@ const MyBookings = () => {
     const declineNumbers = ['4000000000000002', '4000000000000003', '4000000000009995', '4000000000000069'];
 
     if (!/^[0-9]{16}$/.test(normalizedNumber)) {
-      alert('Invalid demo card number. Use 4242 4242 4242 4242.');
+      alert('Invalid card number. Must be 16 digits.');
       return;
     }
 
     if (declineNumbers.includes(normalizedNumber)) {
-      alert('Payment declined. Use 4242 4242 4242 4242 for successful demo checkout.');
-      return;
-    }
-
-    if (normalizedNumber !== '4242424242424242') {
-      alert('Invalid demo card. Use 4242 4242 4242 4242 for successful checkout.');
+      alert('Your card was declined.');
       return;
     }
 
@@ -158,6 +125,7 @@ const MyBookings = () => {
       await bookingAPI.confirmPayment({
         paymentIntentId,
         bookingId: paymentModal.bookingId,
+        classId: paymentModal.classId,
       });
 
       setPaymentModal(null);
@@ -172,6 +140,7 @@ const MyBookings = () => {
 
   const getStatusBadge = (status) => {
     const config = {
+      pending: { bg: '#FFF3CD', color: '#856404', border: '#FFECB5', label: '⏳ Pending' },
       reserved: { bg: '#FFF3CD', color: '#856404', border: '#FFECB5', label: '⏳ Reserved' },
       completed: { bg: '#D1E7DD', color: '#0A5C36', border: '#BADBCC', label: '✅ Completed' },
       cancelled: { bg: '#F8D7DA', color: '#842029', border: '#F5C2C7', label: '❌ Cancelled' },
@@ -234,7 +203,7 @@ const MyBookings = () => {
 
   const stats = {
     total: bookings.length,
-    active: bookings.filter(b => b.status === 'reserved').length,
+    active: bookings.filter(b => b.status === 'reserved' || b.status === 'pending').length,
     completed: bookings.filter(b => b.status === 'completed').length,
     cancelled: bookings.filter(b => b.status === 'cancelled').length,
   };
@@ -427,13 +396,7 @@ const MyBookings = () => {
                       >
                         ✖ Cancel
                       </button>
-                      <button
-                        className="action-btn"
-                        onClick={() => setReschedulingId(reschedulingId === booking._id ? null : booking._id)}
-                        style={{ ...styles.actionBtn, background: '#6366f1' }}
-                      >
-                        🔄 {reschedulingId === booking._id ? 'Cancel Reschedule' : 'Reschedule'}
-                      </button>
+
                     </>
                   )}
 
@@ -476,31 +439,7 @@ const MyBookings = () => {
                   })()}
                 </div>
 
-                {/* Reschedule Form */}
-                {reschedulingId === booking._id && (
-                  <form onSubmit={(e) => handleRescheduleBooking(e, booking._id)} style={styles.formBox}>
-                    <h4 style={styles.formTitle}>🔄 Reschedule Booking</h4>
-                    <div style={styles.formGroup}>
-                      <label style={styles.label}>Select New Class:</label>
-                      <select
-                        value={newClassId}
-                        onChange={(e) => setNewClassId(e.target.value)}
-                        style={styles.select}
-                        required
-                      >
-                        <option value="">-- Select a class --</option>
-                        {availableClasses
-                          .filter(c => c._id !== booking.class?._id && (c.enrolledUsers?.length || 0) < c.capacity)
-                          .map(c => (
-                            <option key={c._id} value={c._id}>
-                              {c.title} — {new Date(c.scheduleDate).toLocaleDateString()} at {c.startTime}
-                            </option>
-                          ))}
-                      </select>
-                    </div>
-                    <button type="submit" style={styles.submitBtn}>Confirm Reschedule</button>
-                  </form>
-                )}
+
 
                 {(() => {
                   const existingReview = userReviews.find(rv => String(rv.class?._id || rv.class) === String(booking.class?._id));

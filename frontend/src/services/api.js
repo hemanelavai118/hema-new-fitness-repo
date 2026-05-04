@@ -59,7 +59,7 @@ export const bookingAPI = {
   getMyBookings: () => api.get('/bookings/my-bookings'),
   getTrainerBookings: () => api.get('/bookings/trainer-bookings'),
   cancelBooking: (bookingId) => api.patch(`/bookings/${bookingId}/cancel`),
-  rescheduleBooking: (bookingId, newClassId) => api.patch(`/bookings/${bookingId}/reschedule`, { newClassId }),
+  rescheduleBooking: (bookingId, rescheduleData) => api.patch(`/bookings/${bookingId}/reschedule`, rescheduleData),
 };
 
 // ============ REVIEW ENDPOINTS ============

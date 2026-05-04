@@ -9,7 +9,7 @@ const stripePublicKey = process.env.REACT_APP_STRIPE_PUBLIC_KEY;
 const stripePromise = stripePublicKey ? loadStripe(stripePublicKey) : null;
 
 // DummyPaymentModal — shown when Stripe is not configured (demo/test mode)
-const DummyPaymentModal = ({ bookingId, amount, className, onSuccess, onClose }) => {
+const DummyPaymentModal = ({ classId, bookingId, amount, className, onSuccess, onClose }) => {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
   const [card, setCard] = useState({ name: '', number: '4242 4242 4242 4242', expiry: '12/26', cvv: '123' });
@@ -25,17 +25,12 @@ const DummyPaymentModal = ({ bookingId, amount, className, onSuccess, onClose })
     const declineNumbers = ['4000000000000002', '4000000000000003', '4000000000009995', '4000000000000069'];
 
     if (!/^[0-9]{16}$/.test(normalizedNumber)) {
-      setError('Invalid demo card number. Use 4242 4242 4242 4242.');
+      setError('Invalid card number. Must be 16 digits.');
       return;
     }
 
     if (declineNumbers.includes(normalizedNumber)) {
-      setError('Payment declined. Use 4242 4242 4242 4242 for successful demo checkout.');
-      return;
-    }
-
-    if (normalizedNumber !== '4242424242424242') {
-      setError('Invalid demo card. Use 4242 4242 4242 4242 for successful checkout.');
+      setError('Your card was declined.');
       return;
     }
 
@@ -43,7 +38,7 @@ const DummyPaymentModal = ({ bookingId, amount, className, onSuccess, onClose })
     setProcessing(true);
     try {
       await new Promise(r => setTimeout(r, 1500)); // simulate network delay
-      await bookingAPI.confirmPayment({ paymentIntentId: 'dummy_success_id', bookingId });
+      await bookingAPI.confirmPayment({ paymentIntentId: 'dummy_success_id', classId, bookingId });
       onSuccess();
     } catch (err) {
       setError(err.response?.data?.message || 'Payment failed. Please try again.');
@@ -132,7 +127,6 @@ const ClassDetail = () => {
   const [error, setError] = useState('');
   const [bookingLoading, setBookingLoading] = useState(false);
   const [clientSecret, setClientSecret] = useState('');
-  const [pendingBookingId, setPendingBookingId] = useState(null);
   const [showDummyModal, setShowDummyModal] = useState(false);
   const [alreadyBooked, setAlreadyBooked] = useState(false);
 
@@ -177,11 +171,9 @@ const ClassDetail = () => {
       const response = await bookingAPI.createBooking({ classId: id });
       
       if (response.data.clientSecret === 'dummy_secret_mode') {
-        setPendingBookingId(response.data.booking._id);
         setShowDummyModal(true);
       } else {
         setClientSecret(response.data.clientSecret);
-        setPendingBookingId(response.data.booking._id);
       }
     } catch (err) {
       const msg = err.response?.data?.message || 'Booking failed';
@@ -220,12 +212,11 @@ const ClassDetail = () => {
 
   const handleStripePaymentSuccess = async () => {
     setClientSecret('');
-    setPendingBookingId(null);
     alert('✅ Payment successful! Your booking is confirmed. Redirecting to My Bookings...');
     navigate('/my-bookings');
   };
 
-  const StripePaymentForm = ({ clientSecret, bookingId, onSuccess }) => {
+  const StripePaymentForm = ({ clientSecret, classId, bookingId, onSuccess }) => {
     const stripe = useStripe();
     const elements = useElements();
     const [localError, setLocalError] = useState('');
@@ -261,7 +252,7 @@ const ClassDetail = () => {
 
       if (paymentIntent?.status === 'succeeded') {
         try {
-          await bookingAPI.confirmPayment({ paymentIntentId: paymentIntent.id, bookingId });
+          await bookingAPI.confirmPayment({ paymentIntentId: paymentIntent.id, classId, bookingId });
           onSuccess();
         } catch (err) {
           setLocalError(err.response?.data?.message || 'Payment succeeded but confirmation failed.');
@@ -303,6 +294,7 @@ const ClassDetail = () => {
 
   return (
     <div style={styles.container}>
+      <button onClick={() => navigate(-1)} style={styles.backButton}>← Back</button>
       <div style={styles.detailsCard}>
         <h1>{fitnessClass.title}</h1>
 
@@ -386,7 +378,7 @@ const ClassDetail = () => {
             <Elements stripe={stripePromise}>
               <StripePaymentForm
                 clientSecret={clientSecret}
-                bookingId={pendingBookingId}
+                classId={id}
                 onSuccess={handleStripePaymentSuccess}
               />
             </Elements>
@@ -444,7 +436,7 @@ const ClassDetail = () => {
       {/* Dummy Payment Modal */}
       {showDummyModal && (
         <DummyPaymentModal
-          bookingId={pendingBookingId}
+          classId={id}
           amount={fitnessClass?.price || 0}
           className={fitnessClass?.title || 'Class'}
           onSuccess={handlePaymentSuccess}
@@ -581,6 +573,17 @@ const styles = {
     cursor: 'pointer',
     fontSize: '1rem',
     fontWeight: 'bold',
+  },
+  backButton: {
+    background: '#f3f4f6',
+    color: '#374151',
+    border: '1px solid #d1d5db',
+    borderRadius: '6px',
+    padding: '0.5rem 1rem',
+    cursor: 'pointer',
+    fontSize: '0.9rem',
+    marginBottom: '1rem',
+    display: 'inline-block',
   },
 };
 
