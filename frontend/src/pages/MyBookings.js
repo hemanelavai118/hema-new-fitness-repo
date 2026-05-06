@@ -9,9 +9,6 @@ const MyBookings = () => {
   const [reviewData, setReviewData] = useState({ rating: 5, comment: '' });
   const [userReviews, setUserReviews] = useState([]);
   const [selectedStatus, setSelectedStatus] = useState('all');
-  const [paymentModal, setPaymentModal] = useState(null); // { bookingId, amount, className }
-  const [paymentProcessing, setPaymentProcessing] = useState(false);
-  const [cardDetails, setCardDetails] = useState({ number: '4242 4242 4242 4242', expiry: '12/26', cvv: '123', name: '' });
 
   const getBookingEndDate = (booking) => {
     if (!booking?.class?.scheduleDate) return null;
@@ -84,57 +81,6 @@ const MyBookings = () => {
       fetchUserReviews();
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to submit feedback');
-    }
-  };
-
-  const openPaymentModal = (booking) => {
-    setPaymentModal({
-      bookingId: booking._id,
-      classId: booking.class?._id,
-      amount: booking.class?.price || 0,
-      className: booking.class?.title || 'Class',
-    });
-    setCardDetails({ number: '4242 4242 4242 4242', expiry: '12/26', cvv: '123', name: '' });
-  };
-
-  const handleDummyPayment = async (e) => {
-    e.preventDefault();
-    if (!cardDetails.name.trim()) {
-      alert('Please enter the cardholder name.');
-      return;
-    }
-
-    const normalizedNumber = cardDetails.number.replace(/\D/g, '');
-    const declineNumbers = ['4000000000000002', '4000000000000003', '4000000000009995', '4000000000000069'];
-
-    if (!/^[0-9]{16}$/.test(normalizedNumber)) {
-      alert('Invalid card number. Must be 16 digits.');
-      return;
-    }
-
-    if (declineNumbers.includes(normalizedNumber)) {
-      alert('Your card was declined.');
-      return;
-    }
-
-    setPaymentProcessing(true);
-    try {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      const paymentIntentId = 'dummy_success_id';
-
-      await bookingAPI.confirmPayment({
-        paymentIntentId,
-        bookingId: paymentModal.bookingId,
-        classId: paymentModal.classId,
-      });
-
-      setPaymentModal(null);
-      setPaymentProcessing(false);
-      alert('✅ Payment successful! Your booking is now confirmed.');
-      fetchBookings();
-    } catch (err) {
-      setPaymentProcessing(false);
-      alert(err.response?.data?.message || 'Payment failed. Please try again.');
     }
   };
 
@@ -363,7 +309,7 @@ const MyBookings = () => {
                       <div style={styles.infoValue}>{formatBookedOn(booking.createdAt)}</div>
                     </div>
                   </div>
-                  {booking.transactionId && booking.transactionId !== 'dummy_success_id' && (
+                  {booking.transactionId && (
                     <div style={styles.infoItem}>
                       <span style={styles.infoIcon}>💳</span>
                       <div>
@@ -376,16 +322,6 @@ const MyBookings = () => {
 
                 {/* Action Buttons */}
                 <div style={styles.actions}>
-                  {/* Pay Now button for pending bookings */}
-                  {booking.paymentStatus === 'pending' && booking.status !== 'cancelled' && !isBookingCompleted(booking) && (
-                    <button
-                      className="action-btn"
-                      onClick={() => openPaymentModal(booking)}
-                      style={{ ...styles.actionBtn, background: '#10b981', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)' }}
-                    >
-                      💳 Pay Now
-                    </button>
-                  )}
 
                   {booking.status !== 'cancelled' && booking.status !== 'completed' && !isBookingCompleted(booking) && (
                     <>
@@ -517,96 +453,7 @@ const MyBookings = () => {
         )}
       </div>
 
-      {/* Dummy Payment Modal */}
-      {paymentModal && (
-        <div style={styles.modalOverlay} onClick={() => !paymentProcessing && setPaymentModal(null)}>
-          <div style={styles.modal} onClick={e => e.stopPropagation()}>
-            <div style={styles.modalHeader}>
-              <h2 style={{ margin: 0, fontSize: '1.4rem' }}>💳 Complete Payment</h2>
-              <button
-                onClick={() => !paymentProcessing && setPaymentModal(null)}
-                style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: '#6c757d' }}
-              >×</button>
-            </div>
-
-            <div style={styles.modalBody}>
-              <div style={styles.paymentSummary}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#6c757d' }}>Class</span>
-                  <span style={{ fontWeight: '600' }}>{paymentModal.className}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem' }}>
-                  <span style={{ color: '#6c757d' }}>Amount</span>
-                  <span style={{ fontWeight: '800', color: '#10b981', fontSize: '1.2rem' }}>${paymentModal.amount}</span>
-                </div>
-              </div>
-
-              <div style={styles.demoNotice}>
-                🔒 Demo Mode — Use the pre-filled test card details below
-              </div>
-
-              <form onSubmit={handleDummyPayment}>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>Cardholder Name</label>
-                  <input
-                    type="text"
-                    value={cardDetails.name}
-                    onChange={e => setCardDetails({ ...cardDetails, name: e.target.value })}
-                    placeholder="Your Full Name"
-                    required
-                    style={styles.input}
-                  />
-                </div>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>Card Number</label>
-                  <input
-                    type="text"
-                    value={cardDetails.number}
-                    onChange={e => setCardDetails({ ...cardDetails, number: e.target.value })}
-                    style={{ ...styles.input, fontFamily: 'monospace', letterSpacing: '2px' }}
-                    maxLength={19}
-                  />
-                  <span style={{ fontSize: '0.75rem', color: '#6c757d' }}>✓ Test card: 4242 4242 4242 4242</span>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                  <div style={styles.formGroup}>
-                    <label style={styles.label}>Expiry Date</label>
-                    <input
-                      type="text"
-                      value={cardDetails.expiry}
-                      onChange={e => setCardDetails({ ...cardDetails, expiry: e.target.value })}
-                      style={styles.input}
-                      placeholder="MM/YY"
-                    />
-                  </div>
-                  <div style={styles.formGroup}>
-                    <label style={styles.label}>CVV</label>
-                    <input
-                      type="text"
-                      value={cardDetails.cvv}
-                      onChange={e => setCardDetails({ ...cardDetails, cvv: e.target.value })}
-                      style={styles.input}
-                      placeholder="123"
-                      maxLength={3}
-                    />
-                  </div>
-                </div>
-                <button
-                  type="submit"
-                  disabled={paymentProcessing}
-                  style={{
-                    ...styles.payNowBtn,
-                    opacity: paymentProcessing ? 0.7 : 1,
-                    cursor: paymentProcessing ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  {paymentProcessing ? '⏳ Processing Payment...' : `Pay $${paymentModal.amount} Now`}
-                </button>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Stripe Payment Modal removed — bookings only created after payment on ClassDetail */}
     </div>
   );
 };

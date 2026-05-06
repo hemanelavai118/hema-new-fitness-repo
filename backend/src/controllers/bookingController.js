@@ -16,12 +16,12 @@ const getClassEndDateTime = (fitnessClass) => {
   return classDate;
 };
 
-// Create Booking and get Payment Intent
+// Create PaymentIntent only — NO booking record until payment succeeds
 const createBooking = async (req, res) => {
   try {
     const { classId } = req.body;
     
-    const fitnessClass = await Class.findById(classId);
+    const fitnessClass = await Class.findById(classId).populate('trainer');
     if (!fitnessClass) {
       return res.status(404).json({ message: 'Class not found' });
     }
@@ -46,20 +46,15 @@ const createBooking = async (req, res) => {
       return res.status(400).json({ message: 'Cannot book a class that has already ended.' });
     }
 
-    let clientSecret = null;
-    if (process.env.STRIPE_SECRET_KEY && process.env.STRIPE_SECRET_KEY.startsWith('sk_')) {
-      const paymentIntent = await stripe.paymentIntents.create({
-        amount: Math.round(fitnessClass.price * 100),
-        currency: 'usd',
-        metadata: { classId: classId.toString(), userId: req.user._id.toString() }
-      });
-      clientSecret = paymentIntent.client_secret;
-    } else {
-      clientSecret = 'dummy_secret_mode';
-    }
+    // Create Stripe PaymentIntent only — no booking in DB yet
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(fitnessClass.price * 100),
+      currency: 'usd',
+      metadata: { classId: classId.toString(), userId: req.user._id.toString() }
+    });
 
     res.status(200).json({
-      clientSecret,
+      clientSecret: paymentIntent.client_secret,
       classId,
       message: 'Payment initialized. Please complete payment.'
     });
@@ -68,84 +63,64 @@ const createBooking = async (req, res) => {
   }
 };
 
-// Confirm Payment
+// Confirm Payment — verify with Stripe, THEN create booking
 const confirmPayment = async (req, res) => {
   try {
-    const { paymentIntentId, classId, bookingId } = req.body;
-    
-    let isSuccess = false;
+    const { paymentIntentId, classId } = req.body;
 
-    if (paymentIntentId === 'dummy_success_id') {
-      isSuccess = true;
-    } else if (paymentIntentId === 'dummy_decline_id') {
-      isSuccess = false;
-    } else {
-      // In production, this should ideally be handled via Stripe Webhooks
-      const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
-      if (paymentIntent.status === 'succeeded') {
-        isSuccess = true;
-      }
+    if (!paymentIntentId || !classId) {
+      return res.status(400).json({ message: 'Payment intent ID and class ID are required.' });
     }
-    
-    if (isSuccess) {
-      let booking;
-      
-      // Support for existing pending bookings
-      if (bookingId) {
-        booking = await Booking.findById(bookingId).populate('class').populate('trainer');
-        if (!booking) return res.status(404).json({ message: 'Booking not found' });
 
-        booking.paymentStatus = 'paid';
-        booking.status = 'reserved';
-        booking.transactionId = paymentIntentId;
-        await booking.save();
-        
-        const fitnessClass = await Class.findById(booking.class._id);
-        if(!fitnessClass.enrolledUsers.includes(req.user._id)){
-           fitnessClass.enrolledUsers.push(req.user._id);
-           await fitnessClass.save();
-        }
+    // Always verify with Stripe — no hardcoded values
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
 
-        await sendEmail({
-          email: req.user.email,
-          subject: 'Booking Confirmation',
-          message: `Your booking for ${fitnessClass.title} is confirmed.`
-        });
-      } else {
-        const fitnessClass = await Class.findById(classId).populate('trainer');
-        if (!fitnessClass) return res.status(404).json({ message: 'Class not found' });
-
-        if (fitnessClass.enrolledUsers.length >= fitnessClass.capacity) {
-          return res.status(400).json({ message: 'Class is full' });
-        }
-
-        booking = await Booking.create({
-          user: req.user._id,
-          class: classId,
-          trainer: fitnessClass.trainer._id,
-          status: 'reserved',
-          paymentStatus: 'paid',
-          transactionId: paymentIntentId
-        });
-        
-        if(!fitnessClass.enrolledUsers.includes(req.user._id)){
-           fitnessClass.enrolledUsers.push(req.user._id);
-           await fitnessClass.save();
-        }
-
-        await sendEmail({
-          email: req.user.email,
-          subject: 'Booking Confirmation',
-          message: `Your booking for ${fitnessClass.title} is confirmed.`
-        });
-
-        booking = await Booking.findById(booking._id).populate('class').populate('trainer');
-      }
-
-      res.json({ message: 'Payment confirmed and booking completed successfully', booking });
-    } else {
-      res.status(400).json({ message: 'Payment not successful' });
+    if (paymentIntent.status !== 'succeeded') {
+      return res.status(400).json({ message: 'Payment not successful. Status: ' + paymentIntent.status });
     }
+
+    // Prevent duplicate booking
+    const existingBooking = await Booking.findOne({
+      user: req.user._id,
+      class: classId,
+      status: { $ne: 'cancelled' }
+    });
+
+    if (existingBooking) {
+      return res.status(400).json({ message: 'You already have a booking for this class.' });
+    }
+
+    const fitnessClass = await Class.findById(classId).populate('trainer');
+    if (!fitnessClass) return res.status(404).json({ message: 'Class not found' });
+
+    if (fitnessClass.enrolledUsers.length >= fitnessClass.capacity) {
+      return res.status(400).json({ message: 'Class is full' });
+    }
+
+    // Create booking ONLY after payment is verified
+    const booking = await Booking.create({
+      user: req.user._id,
+      class: classId,
+      trainer: fitnessClass.trainer._id,
+      status: 'reserved',
+      paymentStatus: 'paid',
+      transactionId: paymentIntentId
+    });
+
+    if (!fitnessClass.enrolledUsers.includes(req.user._id)) {
+      fitnessClass.enrolledUsers.push(req.user._id);
+      await fitnessClass.save();
+    }
+
+    await sendEmail({
+      email: req.user.email,
+      subject: 'Booking Confirmation',
+      message: `Your booking for ${fitnessClass.title} is confirmed.`
+    });
+
+    const populatedBooking = await Booking.findById(booking._id).populate('class').populate('trainer');
+
+    res.json({ message: 'Payment confirmed and booking completed successfully', booking: populatedBooking });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
