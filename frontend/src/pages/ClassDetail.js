@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 
-const stripePublicKey = process.env.REACT_APP_STRIPE_PUBLIC_KEY;
+const stripePublicKey ="pk_test_51TU3W2DxzM5cyye88ROuKCgqGvpNgAwIGwoLUsS5VuUKUOOF436xBNCvJJBjO0EpclwIa9AxEG7edtlR3gtpBE3c00ilQ1m2Ns";
 const stripePromise = stripePublicKey ? loadStripe(stripePublicKey) : null;
 
 // Stripe Payment Form Component
